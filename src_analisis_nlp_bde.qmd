@@ -1,0 +1,1322 @@
+---
+title: "Análisis informes Banco de España"
+subtitle: "Tarea de evaluación - Datos no estructurados"
+title-block-author:
+author: 
+  - name: "Rubén Cosín Morató"
+  - name: "Mario Martínez Escrivá"
+  - name: "Luis Mera Terrats"
+format:
+  html: 
+    toc: true
+    embed-resources: true
+    toc-location: left
+    toc-title: "Contenidos"
+    smooth-scroll: true
+    theme: superhero
+    mainfont: system-ui
+    monofont: system-ui
+    lang: "es"
+---
+
+
+<style>
+.toc .toc-item.toc-level-2 {
+  display: none;
+}
+
+.toc .toc-item.toc-level-1:hover + .toc .toc-item.toc-level-2 {
+  display: block;
+}
+</style>
+
+
+```{css, echo = FALSE}
+.justify {
+  text-align: justify !important
+}
+```
+
+# Introducción
+
+::: justify
+La presente tarea se centra en la exploración y el análisis de una serie de informes anuales del Banco de España, comprendidos entre los años 2013 y 2022. El objetivo de este estudio es, en última instancia, identificar patrones e inferir temáticas recurrentes y variaciones a lo largo de este periodo, utilizando una combinación de métodos gráficos y estadísticos que faciliten la generación de conocimiento.
+
+Para ello, se parte de una colección de documentos PDF correspondientes a cada año del informe, a los cuales se aplicarán diversas técnicas de minería de texto con el fin de extraer y estructurar la información, pudiendo de esta manera lograr el objetivo propuesto.
+:::
+
+#### Procesamiento de los datos
+
+Comenzamos cargando las librerías necesarias para realizar nuestro análisis.
+
+```{r}
+#| message: false
+#| warning: false
+library(quanteda)
+library(tidytext)
+library(kableExtra)
+library(readtext)
+library(tidyverse)
+library(stopwords)
+library(ggthemes)
+library(ggtext)
+library(viridis)
+library(wordcloud)
+library(RColorBrewer)
+library(quanteda.textstats)
+library(quanteda.textplots)
+library(viridis)
+```
+
+::: justify
+El siguiente código permite cargar los distinos informes en formato pdf como texto y procesarlos en un solo dataframe.
+:::
+
+```{r}
+#| message: false
+#| warning: false
+archivos <- list.files(path = "DATOS/bde/",pattern="^\\d{4}.*pdf$") 
+
+myPaste <- function(x){paste0("DATOS/bde/",x)}
+archivos <- lapply(archivos,myPaste) |> unlist()
+
+informesBdE <- lapply(archivos,readtext) 
+informesBdE <- do.call(rbind,informesBdE)
+
+informesBdE$text <- informesBdE$text %>% str_replace_all("\\h+", " ") 
+
+informesBdE$text <- informesBdE$text %>% str_replace_all("-\\n ", "") 
+
+informesBdE$text <- informesBdE$text %>% str_replace_all("\\n", "") 
+```
+
+
+::: justify
+Limpiamos los datos. En primer lugar, renombramos las columnas de nuestro dataframe como **año** y **texto** para facilitar su uso. Luego, eliminamos la extensión **.pdf** de los valores en la columna **año** con gsub, y finalmente, convertimos **año** a numérica para poder trabajar con ella más fácilmente en cálculos y gráficos.
+:::
+
+```{r}
+#| message: false
+#| warning: false
+colnames(informesBdE) <- c("año", "texto")
+
+informesBdE$año <- gsub(".pdf", "", informesBdE$año) 
+
+informesBdE$año<-as.numeric(informesBdE$año)
+```
+
+Con esto, estamos preparados para comenzar nuestro estudio.
+
+
+# Análisis frecuencia de palabras
+
+::: justify
+Nuestro primer acercamiento será realizar un análisis de la frecuencia de las palabras contenidas en los documentos. Este enfoque permite identificar rápidamente los temas y términos que dominan en los informes anuales del Banco de España, tanto en cada año específico como en una perspectiva general.
+
+
+El siguiente código realiza una limpieza del texto en los informes: primero, tokeniza el texto en palabras individuales y elimina **stopwords** en español que no aportan significado. Luego, remueve palabras específicas (como “informe”, “capítulo” y algunos números), ya que son términos que se repiten muchas veces porque son títulos o marcas que están en todas las páginas y no aportan conocimiento.
+
+```{r}
+#| message: false
+#| warning: false
+tidy_informesBdE<-informesBdE%>%
+  unnest_tokens(word,texto)%>%
+  anti_join(get_stopwords('es'))
+
+tidy_informesBdE <- tidy_informesBdE %>%
+  filter(!word %in% c("informe","anual","capítulo","1","2","3","4","gobernador","2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022","abreviaturasbanco"))
+```
+:::
+
+
+### Nivel años
+
+::: justify
+El análisis de frecuencia de palabras año por año es particularmente útil para captar las variaciones y tendencias en el lenguaje y los temas a lo largo del tiempo. Por ejemplo, ciertos términos pueden ganar prominencia en respuesta a eventos económicos específicos o cambios en la política económica, como pueden ser "crisis", "crecimiento", o "inflación". Esta evolución en el vocabulario permite comprender cómo el enfoque y las prioridades del Banco han cambiado o se han adaptado frente a nuevas realidades económicas o financieras. Además, este análisis anual nos ofrece una forma objetiva de comparar periodos y de contextualizar cada informe en el marco de los retos y objetivos predominantes de ese año.
+
+Para ello, vamos a realizar una visualización gráfica por cada año con las 20 palabras más recurrentes en ese determinado periodo.
+
+Con el siguiente código obtenemos las 20 palabras más frecuentes en cada informe/año.
+
+```{r}
+#| message: false
+#| warning: false
+frecuencia_palabras <- tidy_informesBdE %>%
+  count(año, word, sort = TRUE)
+
+top_20_palabras_por_año <- frecuencia_palabras %>%
+  group_by(año) %>%
+  arrange(desc(n), word) %>%   
+  mutate(rank = row_number()) %>% 
+  filter(rank <= 20) %>%         
+  select(-rank) %>%              
+  ungroup()
+```
+
+
+En siguiente recuadro, haciendo **click** en un determinado año, podremos ver su correspondiente representación.<br>
+:::
+
+>Análisis de palabras más comunes en los informes
+
+::: {.panel-tabset}
+
+## 2013
+
+```{r}
+#| code-fold: true
+#| code-summary: "Mostrar código"
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 7
+palabras_2013 <- top_20_palabras_por_año %>% filter(año == 2013)
+
+
+ggplot(palabras_2013, aes(x = reorder(word, n), y = n, fill = n)) +
+  geom_bar(stat = "identity", color = "darkslategray") +
+  geom_text(aes(label = n), hjust = -0.2, size = 6, color = "black") +
+  coord_flip() +
+  scale_fill_gradient(low = "#B0E0E6", high = "#1C3D70", guide = "none") +
+  labs(title = "20 palabras más frecuentes <b style='color:#1C3D70;'>AÑO 2013</b>",
+       x = NULL,
+       y = NULL) +
+  theme_minimal() +
+  theme(
+    plot.background = element_rect(fill = "whitesmoke", color = NA),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_markdown(hjust = 0.43, size = 18,
+                                  margin = margin(b = 10)),
+    axis.text.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 15, face = "bold.italic", color = "black",
+                               margin = margin(r = -20)),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    legend.position = "none"
+  )
+```
+
+
+## 2014
+
+```{r}
+#| code-fold: true
+#| code-summary: "Mostrar código"
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 7
+palabras_2014 <- top_20_palabras_por_año %>% filter(año == 2014)
+
+ggplot(palabras_2014, aes(x = reorder(word, n), y = n, fill = n)) +
+  geom_bar(stat = "identity", color = "darkslategray") +
+  geom_text(aes(label = n), hjust = -0.2, size = 6, color = "black") +
+  coord_flip() +
+  scale_fill_gradient(low = "#B0E0E6", high = "#1C3D70", guide = "none") +
+  labs(title = "20 palabras más frecuentes <b style='color:#1C3D70;'>AÑO 2014</b>",
+       x = NULL,
+       y = NULL) +
+  theme_minimal() +
+  theme(
+    plot.background = element_rect(fill = "whitesmoke", color = NA),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_markdown(hjust = 0.43, size = 18,
+                                  margin = margin(b = 10)),
+    axis.text.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 15, face = "bold.italic", color = "black",
+                               margin = margin(r = -20)),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    legend.position = "none"
+  )
+```
+
+
+## 2015
+
+```{r}
+#| code-fold: true
+#| code-summary: "Mostrar código"
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 7
+palabras_2015 <- top_20_palabras_por_año %>% filter(año == 2015)
+
+
+ggplot(palabras_2015, aes(x = reorder(word, n), y = n, fill = n)) +
+  geom_bar(stat = "identity", color = "darkslategray") +
+  geom_text(aes(label = n), hjust = -0.2, size = 6, color = "black") +
+  coord_flip() +
+  scale_fill_gradient(low = "#B0E0E6", high = "#1C3D70", guide = "none") +
+  labs(title = "20 palabras más frecuentes <b style='color:#1C3D70;'>AÑO 2015</b>",
+       x = NULL,
+       y = NULL) +
+  theme_minimal() +
+  theme(
+    plot.background = element_rect(fill = "whitesmoke", color = NA),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_markdown(hjust = 0.43, size = 18,
+                                  margin = margin(b = 10)),
+    axis.text.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 15, face = "bold.italic", color = "black",
+                               margin = margin(r = -20)),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    legend.position = "none"
+  )
+```
+
+## 2016
+
+```{r}
+#| code-fold: true
+#| code-summary: "Mostrar código"
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 7
+palabras_2016 <- top_20_palabras_por_año %>% filter(año == 2016)
+
+
+ggplot(palabras_2016, aes(x = reorder(word, n), y = n, fill = n)) +
+  geom_bar(stat = "identity", color = "darkslategray") +
+  geom_text(aes(label = n), hjust = -0.2, size = 6, color = "black") +
+  coord_flip() +
+  scale_fill_gradient(low = "#B0E0E6", high = "#1C3D70", guide = "none") +
+  labs(title = "20 palabras más frecuentes <b style='color:#1C3D70;'>AÑO 2016</b>",
+       x = NULL,
+       y = NULL) +
+  theme_minimal() +
+  theme(
+    plot.background = element_rect(fill = "whitesmoke", color = NA),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_markdown(hjust = 0.43, size = 18,
+                                  margin = margin(b = 10)),
+    axis.text.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 15, face = "bold.italic", color = "black",
+                               margin = margin(r = -20)),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    legend.position = "none"
+  )
+```
+
+
+## 2017
+
+```{r}
+#| code-fold: true
+#| code-summary: "Mostrar código"
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 7
+palabras_2017 <- top_20_palabras_por_año %>% filter(año == 2017)
+
+ggplot(palabras_2017, aes(x = reorder(word, n), y = n, fill = n)) +
+  geom_bar(stat = "identity", color = "darkslategray") +
+  geom_text(aes(label = n), hjust = -0.2, size = 6, color = "black") +
+  coord_flip() +
+  scale_fill_gradient(low = "#B0E0E6", high = "#1C3D70", guide = "none") +
+  labs(title = "20 palabras más frecuentes <b style='color:#1C3D70;'>AÑO 2017</b>",
+       x = NULL,
+       y = NULL) +
+  theme_minimal() +
+  theme(
+    plot.background = element_rect(fill = "whitesmoke", color = NA),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_markdown(hjust = 0.43, size = 18,
+                                  margin = margin(b = 10)),
+    axis.text.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 15, face = "bold.italic", color = "black",
+                               margin = margin(r = -20)),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    legend.position = "none"
+  )
+```
+
+## 2018
+
+```{r}
+#| code-fold: true
+#| code-summary: "Mostrar código"
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 7
+palabras_2018 <- top_20_palabras_por_año %>% filter(año == 2018)
+
+ggplot(palabras_2018, aes(x = reorder(word, n), y = n, fill = n)) +
+  geom_bar(stat = "identity", color = "darkslategray") +
+  geom_text(aes(label = n), hjust = -0.2, size = 6, color = "black") +
+  coord_flip() +
+  scale_fill_gradient(low = "#B0E0E6", high = "#1C3D70", guide = "none") +
+  labs(title = "20 palabras más frecuentes <b style='color:#1C3D70;'>AÑO 2018</b>",
+       x = NULL,
+       y = NULL) +
+  theme_minimal() +
+  theme(
+    plot.background = element_rect(fill = "whitesmoke", color = NA),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_markdown(hjust = 0.43, size = 18,
+                                  margin = margin(b = 10)),
+    axis.text.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 15, face = "bold.italic", color = "black",
+                               margin = margin(r = -20)),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    legend.position = "none"
+  )
+```
+
+## 2019
+
+```{r}
+#| code-fold: true
+#| code-summary: "Mostrar código"
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 7
+palabras_2019 <- top_20_palabras_por_año %>% filter(año == 2019)
+
+ggplot(palabras_2019, aes(x = reorder(word, n), y = n, fill = n)) +
+  geom_bar(stat = "identity", color = "darkslategray") +
+  geom_text(aes(label = n), hjust = -0.2, size = 6, color = "black") +
+  coord_flip() +
+  scale_fill_gradient(low = "#B0E0E6", high = "#1C3D70", guide = "none") +
+  labs(title = "20 palabras más frecuentes <b style='color:#1C3D70;'>AÑO 2019</b>",
+       x = NULL,
+       y = NULL) +
+  theme_minimal() +
+  theme(
+    plot.background = element_rect(fill = "whitesmoke", color = NA),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_markdown(hjust = 0.43, size = 18,
+                                  margin = margin(b = 10)),
+    axis.text.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 15, face = "bold.italic", color = "black",
+                               margin = margin(r = -20)),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    legend.position = "none"
+  )
+```
+
+## 2020
+
+```{r}
+#| code-fold: true
+#| code-summary: "Mostrar código"
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 7
+palabras_2020 <- top_20_palabras_por_año %>% filter(año == 2020)
+
+ggplot(palabras_2020, aes(x = reorder(word, n), y = n, fill = n)) +
+  geom_bar(stat = "identity", color = "darkslategray") +
+  geom_text(aes(label = n), hjust = -0.2, size = 6, color = "black") +
+  coord_flip() +
+  scale_fill_gradient(low = "#B0E0E6", high = "#1C3D70", guide = "none") +
+  labs(title = "20 palabras más frecuentes <b style='color:#1C3D70;'>AÑO 2020</b>",
+       x = NULL,
+       y = NULL) +
+  theme_minimal() +
+  theme(
+    plot.background = element_rect(fill = "whitesmoke", color = NA),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_markdown(hjust = 0.43, size = 18,
+                                  margin = margin(b = 10)),
+    axis.text.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 15, face = "bold.italic", color = "black",
+                               margin = margin(r = -20)),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    legend.position = "none"
+  )
+```
+
+## 2021
+
+```{r}
+#| code-fold: true
+#| code-summary: "Mostrar código"
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 7
+palabras_2021 <- top_20_palabras_por_año %>% filter(año == 2021)
+
+ggplot(palabras_2021, aes(x = reorder(word, n), y = n, fill = n)) +
+  geom_bar(stat = "identity", color = "darkslategray") +
+  geom_text(aes(label = n), hjust = -0.2, size = 6, color = "black") +
+  coord_flip() +
+  scale_fill_gradient(low = "#B0E0E6", high = "#1C3D70", guide = "none") +
+  labs(title = "20 palabras más frecuentes <b style='color:#1C3D70;'>AÑO 2021</b>",
+       x = NULL,
+       y = NULL) +
+  theme_minimal() +
+  theme(
+    plot.background = element_rect(fill = "whitesmoke", color = NA),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_markdown(hjust = 0.43, size = 18,
+                                  margin = margin(b = 10)),
+    axis.text.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 15, face = "bold.italic", color = "black",
+                               margin = margin(r = -20)),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    legend.position = "none"
+  )
+```
+
+## 2022
+
+```{r}
+#| code-fold: true
+#| code-summary: "Mostrar código"
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 7
+palabras_2022 <- top_20_palabras_por_año %>% filter(año == 2022)
+
+
+ggplot(palabras_2022, aes(x = reorder(word, n), y = n, fill = n)) +
+  geom_bar(stat = "identity", color = "darkslategray") +
+  geom_text(aes(label = n), hjust = -0.2, size = 6, color = "black") +
+  coord_flip() +
+  scale_fill_gradient(low = "#B0E0E6", high = "#1C3D70", guide = "none") +
+  labs(title = "20 palabras más frecuentes <b style='color:#1C3D70;'>AÑO 2022</b>",
+       x = NULL,
+       y = NULL) +
+  theme_minimal() +
+  theme(
+    plot.background = element_rect(fill = "whitesmoke", color = NA),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_markdown(hjust = 0.43, size = 18,
+                                  margin = margin(b = 10)),
+    axis.text.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 15, face = "bold.italic", color = "black",
+                               margin = margin(r = -20)),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    legend.position = "none"
+  )
+```
+:::
+
+::: justify
+Este análisis de las palabras más frecuentes, refleja cómo los temas de interés del Banco de España se adaptaron a las circunstancias económicas y políticas de cada periodo, en respuesta a eventos tanto nacionales como internacionales.
+
+En 2013, las palabras predominantes como "economía," "crecimiento," "reformas," y "competitividad" sugieren un enfoque en la recuperación económica tras la crisis de 2008. La atención en "consolidación" y "recuperación" indica una necesidad de estabilidad y de implementar reformas estructurales para fortalecer la economía y mejorar su competitividad en la zona euro.
+
+En 2014, mientras persisten los términos relacionados con la recuperación, palabras como "dinamismo," "ajuste," y "empresas" sugieren una transición hacia el crecimiento. Este año, los efectos de la austeridad y las reformas comienzan a notarse, con una moderada reactivación económica y una mejora gradual en los indicadores de empleo. La aparición de "empresas" indica el énfasis en fomentar la inversión privada y el crecimiento del sector empresarial, necesarios para reducir la dependencia de las medidas de austeridad.
+
+Para 2015, el discurso del Banco de España se centra cada vez más en el “crecimiento” y la “financiación”, reflejando una preocupación por consolidar la recuperación económica y facilitar el acceso al crédito. En este sentido, el “PIB” y la “recuperación” emergen como temas de análisis que destacan el ritmo de crecimiento económico y la superación de los retos. El término “retos” es especialmente significativo, ya que alude a los desafíos económicos estructurales persistentes, como el desempleo y la mejora de la productividad.
+
+En 2016, los términos más frecuentes muestran un claro interés en la consolidación de políticas económicas sostenibles, con "economía," "crecimiento," y "política" entre las palabras más destacadas. La inclusión de términos como "plazo" y "largo" subraya la intención de enfocar las políticas en el largo plazo, moviéndose hacia una planificación estratégica más sólida. "Agentes" y "financieras" sugieren una preocupación por la regulación del sector financiero y su influencia en la economía. 
+
+Para 2017, las palabras más recurrentes apuntan a la consolidación de la recuperación económica, con un marcado interés en el “mercado” y el “trabajo”. Estos términos sugieren un análisis de las condiciones del mercado laboral, así como de las oportunidades de empleo, en un esfuerzo por reforzar el crecimiento económico inclusivo. La frecuencia de términos como “crecimiento”, “recuperación” y “empleo” reafirma la intención de sostener una expansión robusta que beneficie a todos los sectores de la sociedad. En conjunto, el informe de 2017 destaca la importancia de fomentar un mercado laboral estable y fortalecer la estructura de trabajo en España.
+
+En 2018, la palabra "inflación" comienza a destacarse, junto con términos como "política monetaria," "euro," y "precios." Este cambio responde a una economía en expansión, impulsada por la estabilidad en la zona euro, pero con cierta presión inflacionaria. El Banco de España muestra una atención renovada a los efectos de las políticas del BCE, que en 2018 señalaba una posible normalización de los tipos de interés tras años de flexibilización cuantitativa. La "estabilidad de precios" se convierte así en una prioridad para manejar la inflación sin comprometer el crecimiento.
+
+2019 representa un cambio drástico con la irrupción de la pandemia de COVID-19 a finales de año. Términos como "crisis," "pandemia," "medidas," y "COVID" dominan el informe. La crisis sanitaria tuvo un impacto inmediato en la economía global y nacional, y el Banco de España, junto con el gobierno, implementó políticas de emergencia para mitigar sus efectos. La mención de "respuesta" y "fiscal" subraya la magnitud de las intervenciones estatales y la importancia de la política fiscal para sostener el empleo y la actividad económica en un contexto de gran incertidumbre.
+
+En 2020, la crisis de COVID-19 sigue siendo el tema principal. Palabras como "impacto," "crédito," y "trabajadores" subrayan los esfuerzos del Banco de España por asegurar que tanto las empresas como los trabajadores reciban apoyo financiero. Las medidas de confinamiento y las restricciones tuvieron un efecto devastador en sectores clave como el turismo y la hostelería. La atención en términos como "políticas," "recuperación," y "medidas" refleja un año marcado por la intervención estatal para minimizar los efectos económicos de la pandemia.
+
+Para 2021, términos como "inflación," "efectos," y "transición" indican un cambio en el foco, donde el Banco de España comienza a evaluar las consecuencias de la crisis, incluyendo el repunte de la inflación a medida que se reactivaba la economía global. La escasez de suministros y el aumento de precios en productos básicos fueron temas críticos en este periodo. Además, "transición" apunta a un interés creciente en la adaptación a una economía post-pandemia, con una atención especial en la recuperación del mercado laboral y en la estabilidad de precios.
+
+En 2022, el contexto cambia de nuevo, con palabras como "inflación," "precios," y "energética" dominando el informe. La crisis energética, exacerbada por la guerra en Ucrania, aumenta los precios de la energía en Europa y en España, poniendo presión en los costos de producción y en el poder adquisitivo de los consumidores. Los términos "UE" y "monetaria" reflejan la importancia de la coordinación europea para manejar estos desafíos. La inflación elevada se convierte en una preocupación central, llevando al BCE y a otros bancos centrales a endurecer su política monetaria en un esfuerzo por controlar los precios.
+::: 
+
+
+
+### Nivel general
+
+::: justify
+Realizando un análisis de frecuencia de palabras a nivel general, es posible identificar los términos que son fundamentales en la comunicación del Banco a lo largo de todos los años considerados (2013-2022). Este enfoque generalizado nos permite captar los conceptos clave y los ejes temáticos centrales que son recurrentes en los informes, independientemente de los eventos coyunturales. Estos términos suelen reflejar el núcleo de la misión y visión del Banco, así como sus preocupaciones permanentes en torno a la estabilidad económica, el crecimiento sostenible, o la regulación financiera.
+
+
+Para ello, hemos considerado capturar las 20 palabras que más se repiten en conjunto a lo largo de todos los informes.
+
+```{r}
+#| message: false
+#| warning: false
+#Data frame con las frecuencias totales de cada palabra
+frecuencia_general <- frecuencia_palabras %>%
+  group_by(word) %>%
+  summarise(total_n = sum(n)) 
+
+#Seleccionamos las 20 palabras más frecuentes en todos los años
+top_20_palabras <- frecuencia_general %>%
+  slice_max(order_by = total_n, n = 20)
+```
+
+Representamos.
+
+```{r}
+#| code-fold: true
+#| code-summary: "Mostrar código"
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 7
+ggplot(top_20_palabras, aes(x = reorder(word, total_n), y = total_n, fill = total_n)) +
+  geom_col(show.legend = FALSE, width = 0.65, color = "white") + 
+  coord_flip() +
+  labs(
+    title = "<b style='color:#333333'>20 Palabras Más Frecuentes en los Informes del Banco de España</b>",
+    subtitle = "<i style='color:#666666'>Análisis general de las palabras predominantes en todos los informes</i>",
+    x = NULL, 
+    y = "<span style='color:#333333;'>Frecuencia Total</span>",
+    caption = "<span style='color:#888888;'>Fuente: Banco de España</span>"
+  ) +
+  theme_void(base_size = 14) + 
+  theme(
+    plot.title = element_markdown(size = 18, hjust = 0.5, face = "bold"),
+    plot.subtitle = element_markdown(size = 12, hjust = 0.5),
+    axis.text.y = element_text(size = 12, color = "black", face = "italic"),
+    panel.grid.major.y = element_line(color = "#e0e0e0", size = 0.5),
+    plot.background = element_rect(fill = "#fafafa", color = NA),
+    plot.margin = margin(15, 15, 15, 15)
+  ) +
+  scale_fill_gradient(low = "#80cbc4", high = "#004d40") + 
+  geom_text(aes(label = total_n), hjust = -0.1, color = "#333333", size = 3.5) + 
+  theme(
+    plot.caption = element_markdown(hjust = 1, size = 11, color = "#666666"),
+    panel.grid = element_blank()
+  )
+```
+:::
+
+::: justify
+Este conjunto de palabras proporciona una visión general de los temas prioritarios en los informes del Banco de España a lo largo de los años. Terminos como **economía**, **crecimiento**, y **recuperación** reflejan el enfoque constante en el desarrollo económico y en la respuesta a crisis como la financiera de 2008 y la pandemia de COVID-19.
+
+La alta frecuencia de palabras como **política**, **medidas**, **empleo**, y **empresas** sugiere la importancia a políticas de apoyo al sector privado y al mercado laboral, fundamentales para sostener el crecimiento. Términos como **inflación** y **plazo** resaltan la preocupación por la estabilidad de precios y la planificación a largo plazo.
+
+Esta visión general subraya una estrategia de estabilidad económica, apoyo al crecimiento y adaptación frente a los desafíos que han marcado la última década.
+:::
+
+# Análisis de Bigramas y Trigramas
+
+::: justify
+El análisis de bigramas permite detectar términos clave que a menudo se utilizan juntos, como “política monetaria”. Esto ayuda a resaltar los temas recurrentes en los informes y proporciona contexto adicional a las palabras individuales.
+
+Mientras que los trigramas permiten identificar expresiones más complejas y contextuales, como “política monetaria expansiva”. Esto ayuda a captar términos técnicos y frases que son relevantes en los informes, ofreciendo una comprensión más profunda de los temas tratados.
+:::
+
+
+#### Creamos los bigramas
+
+```{r}
+#| message: false
+#| warning: false
+bigramas <- informesBdE %>%
+  unnest_tokens(bigrama, texto, token = "ngrams", n = 2) %>%
+  separate(bigrama, into = c("word1", "word2"), sep = " ") %>%
+  filter(!word1 %in% get_stopwords("es")$word,
+         !word2 %in% get_stopwords("es")$word,
+         !word1 %in% c("informe","anual","capítulo","1","2","3","4","gobernador","2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "imágenes", "índice", "portada", "índices", "presentación", "t1", "t2", "t3", "t4"),
+         !word2 %in% c("informe","anual","capítulo","1","2","3","4","gobernador","2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "imágenes", "índice", "portada", "índices", "presentación", "t1", "t2", "t3", "t4")) %>%
+  unite(bigrama, word1, word2, sep = " ")
+```
+
+#### Creamos los trigramas
+
+```{r}
+#| message: false
+#| warning: false
+trigramas <- informesBdE %>%
+  unnest_tokens(trigrama, texto, token = "ngrams", n = 3) %>%
+  separate(trigrama, into = c("word1", "word2", "word3"), sep = " ") %>%
+  filter(!word1 %in% get_stopwords("es")$word,
+         !word2 %in% get_stopwords("es")$word,
+         !word3 %in% get_stopwords("es")$word,
+         !word1 %in% c("informe","anual","capítulo","1","2","3","4","gobernador","2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "imágenes", "índice", "portada", "índices", "presentación", "t1", "t2", "t3", "t4"),
+         !word2 %in% c("informe","anual","capítulo","1","2","3","4","gobernador","2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "imágenes", "índice", "portada", "índices", "presentación", "t1", "t2", "t3", "t4"),
+         !word3 %in% c("informe","anual","capítulo","1","2","3","4","gobernador","2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "imágenes", "índice", "portada", "índices", "presentación", "t1", "t2", "t3", "t4")) %>%
+  unite(trigrama, word1, word2, word3, sep = " ")
+```
+
+#### Conteo de frecuencias
+
+```{r}
+#| message: false
+#| warning: false
+bigramas_frecuentes <- bigramas %>%
+  count(año, bigrama, sort = TRUE)
+
+trigramas_frecuentes <- trigramas %>%
+  count(año, trigrama, sort = TRUE)
+```
+
+#### Obtenemos los 10 bigramas y trigramas más frecuentes por año
+
+```{r}
+#| message: false
+#| warning: false
+# Bigramas
+top_bigramas <- bigramas_frecuentes %>%
+  group_by(año) %>%
+  arrange(desc(n), bigrama) %>%
+  slice_head(n = 10) %>%
+  ungroup() %>%
+  mutate(bigrama = reorder_within(bigrama, n, año))  
+
+# Trigramas
+top_trigramas <- trigramas_frecuentes %>%
+  group_by(año) %>%
+  arrange(desc(n), trigrama) %>%   
+  slice_head(n = 10) %>%
+  ungroup() %>%
+  mutate(trigrama = reorder_within(trigrama, n, año))  
+```
+
+#### Graficamos los bigramas
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 7
+ggplot(top_bigramas, aes(x = reorder_within(bigrama, n, año), y = n, fill = as.factor(año))) +
+  geom_col(show.legend = FALSE, width = 0.8) +
+  coord_flip() +
+  facet_wrap(~ año, scales = "free_y") +
+  scale_x_reordered() +  
+  scale_fill_manual(values = c("#2a9d8f", "#264653", "#2b6f77", "#86a6a6", "#5c8d89", 
+                               "#3a7b71", "#1b4f5a", "#739c9e", "#4d8d8b", "#4c6e6f")) +
+  labs(
+    title = "<span style='font-size:20pt; color:black;'>Top 10 Bigramas Más Frecuentes por Año</span>",
+    subtitle = "Análisis de bigramas más comunes en cada año",
+    x = NULL,
+    y = NULL,
+    caption = "Datos: Bancos de España"
+  ) +
+  theme_minimal(base_family = "Helvetica") +
+  theme(
+    plot.title = element_markdown(hjust = 0.35, margin = margin(b = 10), face = "bold"),
+    plot.subtitle = element_text(hjust = 0.35, margin = margin(b = 20)),
+    plot.caption = element_text(size = 10, hjust = 1, margin = margin(t = 10), color = "gray50"),
+    strip.text = element_text(size = 12, face = "bold", color = "#333333", margin = margin(b = 10)),
+    axis.text.y = element_text(size = 10, face = "italic", color = "#333333"),
+    axis.text.x = element_blank(), 
+    axis.title.y = element_text(size = 10, face = "bold", margin = margin(r = 10)),
+    panel.grid.major.x = element_blank(), 
+    panel.grid.minor.x = element_blank(), 
+    panel.grid.major = element_line(color = "gray90"),
+    plot.background = element_rect(fill = "#f9f9f9", color = NA),
+    strip.background = element_rect(fill = "#f2f2f2")
+  )
+```
+
+#### Graficamos los trigramas
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 7
+ggplot(top_trigramas, aes(x = reorder_within(trigrama, n, año), y = n, fill = as.factor(año))) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  facet_wrap(~ año, scales = "free_y") +
+  scale_x_reordered() +  
+  scale_fill_manual(values = c("#2a9d8f", "#264653", "#2b6f77", "#86a6a6", "#5c8d89", 
+                               "#3a7b71", "#1b4f5a", "#739c9e", "#4d8d8b", "#4c6e6f")) +
+  labs(
+    title = "Top 10 Trigramas Más Frecuentes por Año",
+    x = NULL,
+    y = NULL,
+    caption = "Datos: Banco de España"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 20, hjust = 0.32, face = "bold"),  # Increased title size
+    plot.caption = element_text(size = 8, hjust = 1, color = "gray50"),
+    strip.text = element_text(size = 12, face = "bold"),
+    strip.background = element_blank(),
+    axis.text.y = element_text(size = 8),
+    axis.text.x = element_blank()
+  )
+```
+
+### Bigramas más frecuentes
+
+::: justify
+A lo largo de los años, los bigramas más frecuentes reflejan temas centrales de los informes anuales, como la “economía española”, y la “política monetaria”. En 2013 y 2014, los bigramas predominantes se centran en conceptos de estabilización económica y la “consolidación fiscal”, sugerente de un énfasis en la recuperación económica y el manejo de las finanzas públicas, en un contexto posterior a la crisis económica de 2008. Estos primeros años presentan una tendencia a abordar temas de ajuste y estabilización, lo cual se refuerza con bigramas como “reformas estructurales” y “ajustes pendientes”.
+
+A medida que avanza la década, se observa un cambio hacia términos como “largo plazo” y “medio plazo”, especialmente entre 2015 y 2017. Este cambio sugiere un enfoque en la sostenibilidad económica y la planificación a futuro, considerando tanto las proyecciones de crecimiento como los desafíos de largo plazo. De igual forma, bigramas como “capital humano” y “política fiscal” denotan un interés en el desarrollo de capacidades dentro de la economía y el control de las políticas fiscales.
+
+En los últimos años de la serie, particularmente en 2020 y 2021, el impacto de la pandemia de COVID-19 se refleja claramente en la frecuencia de bigramas como “COVID 19” y “corto plazo”, evidenciando una atención marcada en los desafíos económicos derivados de la crisis sanitaria global. Además, el término “cambio climático” aparece en 2019 y se convierte en un tema frecuente en 2021, lo que indica una mayor atención del Banco de España hacia la sostenibilidad y el impacto climático en la economía.
+:::
+
+### Trigramas más frecuentes
+
+::: justify
+Los trigramas presentan un matiz más específico sobre los temas tratados. En 2013, frases como "ajuste fiscal permita" y "crecimiento económico configuraron" revelan un enfoque proactivo en la necesidad de ajustes fiscales para facilitar el crecimiento económico, enfatizando la interacción entre la política fiscal y el desarrollo económico. Sin embargo, la información que nos brinda los trigramas en este periodo (2013-2017) es limitada, ya que la máxima frequencia de la mayoria de estos es uno.
+
+A a medida que se avanza en los años, se nota una creciente complejidad en las discusiones, con trigramas como "crisis financiera global" en 2019 y "crisis sanitaria actual" en 2020, que destacan la interconexión de problemas económicos a nivel global y nacional.
+
+En el periodo entre 2021 y 2022 la inflación y los retos climáticos dominan, como se observa en "episodio inflacionista actual" y "distintos riesgos físicos", que muestran la preocupación por el impacto de las condiciones inflacionarias y los riesgos climáticos en la economía. También se hace referencia a "next generation eu", el paquete de ayudas que liberó la Union Europea para la recuperación económica de sus países miembros después de la crisis del Covid-19.
+:::
+
+# Análisis de TF-IDF
+
+::: justify
+TF-IDF mide la importancia de una palabra en un documento en relación con un conjunto de documentos. Se calcula mediante la frecuencia de la palabra en un documento (TF) y la rareza de la palabra en todos los documentos (IDF).
+
+Esta medida permite identificar palabras que son distintivas de un año específico en los informes, resaltando términos que pueden no ser frecuentes pero son únicos. Esto ayuda a observar cómo varían los enfoques y temáticas año tras año, destacando conceptos relevantes en contextos económicos cambiantes.
+:::
+
+#### Calculamos el tf-idf
+
+```{r}
+#| message: false
+#| warning: false
+tf_idf_palabras <- tidy_informesBdE %>%
+  count(año, word) %>%
+  bind_tf_idf(word, año, n) %>%
+  arrange(desc(tf_idf))
+```
+
+#### Seleccionamos las 10 palabras con mayor tf-idf por año
+
+```{r}
+#| message: false
+#| warning: false
+top_tf_idf_palabras <- tf_idf_palabras %>%
+  group_by(año) %>%
+  arrange(desc(tf_idf), word) %>%
+  slice_head(n = 10) %>%
+  ungroup() %>%
+  mutate(word = reorder_within(word, tf_idf, año))
+```
+
+#### Graficamos
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 7
+ggplot(top_tf_idf_palabras, aes(x = reorder_within(word, tf_idf, año), y = tf_idf, fill = as.factor(año))) +
+  geom_col(show.legend = FALSE, width = 0.8) +
+  coord_flip() +
+  facet_wrap(~ año, scales = "free_y") +
+  scale_x_reordered() +  
+  scale_fill_manual(values = c("#2a9d8f", "#264653", "#2b6f77", "#86a6a6", "#5c8d89", 
+                               "#3a7b71", "#1b4f5a", "#739c9e", "#4d8d8b", "#4c6e6f")) +
+  labs(
+    title = "<span style='font-size:20pt; color:black;'>Top 10 Palabras con Mayor TF-IDF por Año</span>",
+    subtitle = "Análisis de términos más distintivos en cada año",
+    x = NULL,
+    y = "Puntaje TF-IDF",
+    caption = "Datos: Banco de España"
+  ) +
+  theme_minimal(base_family = "Helvetica") +
+  theme(
+    plot.title = element_markdown(hjust = 0.4, margin = margin(b = 10), face = "bold"),
+    plot.subtitle = element_text(hjust = 0.4, margin = margin(b = 20)),
+    plot.caption = element_text(size = 10, hjust = 1, margin = margin(t = 10), color = "gray50"),
+    strip.text = element_text(size = 12, face = "bold", color = "#333333", margin = margin(b = 10)),
+    axis.text.y = element_text(size = 10, face = "italic", color = "#333333"),
+    axis.text.x = element_blank(), 
+    axis.title.y = element_text(size = 10, face = "bold", margin = margin(r = 10)),
+    panel.grid.major.x = element_blank(), 
+    panel.grid.minor.x = element_blank(), 
+    panel.grid.major = element_line(color = "gray90"),
+    plot.background = element_rect(fill = "#f9f9f9", color = NA),
+    strip.background = element_rect(fill = "#f2f2f2")
+  )
+```
+
+### Términos destacados según TF-IDF
+
+::: justify
+La métrica de TF-IDF aporta una perspectiva única al destacar términos que no solo son frecuentes, sino también únicos o distintivos para cada año. 
+
+En 2013, palabras como “registrados,” “cerró” y “impulso” reflejan un enfoque en la consolidación de logros económicos, lo cual sugiere una narrativa centrada en la estabilidad y la confianza en el mercado.
+
+Para 2014, términos como “superar,” “afianzamiento” y “trayectoria” indican un esfuerzo por consolidar los logros previos, avanzando hacia un crecimiento sostenible. Además, la aparición de “gama” y “geográfica” puede insinuar una diversificación en las áreas de intervención del Banco.
+
+En 2015, palabras como “cerca,” “establecen” y “descensos” denotan un interés en las fluctuaciones de sectores específicos, mientras que términos como “petróleo” y “situá” reflejan una atención particular en la volatilidad del mercado energético.
+
+Para 2016, los términos “subida” y “sociedades” sugieren un enfoque en temas financieros vinculados al sector privado y los mercados, mientras que la presencia de “petróleo” y “relativamente” denota un análisis constante del mercado energético y sus variaciones.
+
+Asimismo, en 2017, palabras como “innovadora” y “utilización” reflejan un interés en la modernización y eficiencia de los recursos, mientras que “observados” y “limitados” pueden aludir a una supervisión más cautelosa en relación con reformas económicas.
+
+En 2018, destacan términos como “recuadro” y “centrales,” los cuales probablemente estén asociados con temas de regulación y el papel de los bancos. Además, la aparición de palabras numéricas como “66” sugiere una referencia específica a ciertos indicadores cuantitativos en los informes de ese año.
+
+Para 2019, al inicio de la pandemia, términos como “pandemia,” “covid” y “sanitaria” reflejan claramente la preocupación por la crisis sanitaria. Además, palabras como “respuesta” y “enfermedad” subrayan un ajuste en el análisis económico del Banco en respuesta al impacto inmediato de la emergencia.
+
+En 2020, en plena pandemia, el uso de palabras como “ciudades,” “municipios” y “apoyo” destaca un enfoque en el impacto local de la crisis, mientras que términos como “ngue” y “viables” parecen referirse a mecanismos de recuperación y sostenibilidad fiscal en tiempos de incertidumbre.
+
+Para 2021, palabras como “ucrania,” “pandemia” y “guerra” indican cómo la geopolítica y los efectos persistentes de la pandemia influyen en el análisis económico. Además, términos como “inflacionista” y “climático” evidencian una creciente preocupación por la inflación y la transición energética.
+
+Finalmente, en 2022, la presencia de palabras como “índice,” “energética” y “canal” resalta una atención renovada en temas de sostenibilidad y energía. Asimismo, los términos “ue” y “transición” sugieren un enfoque orientado hacia la integración europea y la transición ecológica, mostrando así un compromiso con una narrativa más sostenible y adaptada a los retos climáticos.
+:::
+
+# Herramientas de análisis textual
+
+::: justify
+Este bloque se centra en aplicar diversas herramientas de análisis textual, como la similitud, correlación, keyness, contexto y co-ocurrencias, para descubrir relaciones y patrones significativos en el corpus de documentos analizado.
+:::
+
+::: justify
+Como paso previo, creamos un corpus a partir del texto de los informes y la matriz documento-término(DTM).
+:::
+
+```{r}
+#| message: false
+#| warning: false
+corpus_informes <- corpus(informesBdE$texto)
+
+dtm_informes <- corpus_informes %>%
+  tokens(remove_punct=TRUE,
+         remove_numbers=TRUE,
+         remove_symbols=TRUE, 
+         remove_url=TRUE) %>% 
+  tokens_remove(stopwords("es")) %>%
+  tokens_tolower() %>% 
+  dfm()
+```
+
+
+
+### Similitud entre documentos y términos
+
+::: justify
+Para este paso, analizaremos la similitud entre documentos y entre términos dentro del corpus, utilizando diferentes métricas de similitud. Este análisis permite identificar cuán parecidos son ciertos documentos entre sí o qué términos suelen aparecer juntos en contextos similares, lo cual es fundamental para descubrir patrones y temáticas comunes en los textos.
+
+Observamos la similitud entre documentos (los diferentes informes anuales) usando tanto correlación como el coseno.
+:::
+
+**Similitud entre documentos usando correlación.**
+
+```{r}
+#| message: false
+#| warning: false
+simil_doc_cor <- textstat_simil(dtm_informes, method = "correlation", margin = "documents")
+simil_doc_cor %>%
+as.matrix() %>%
+as.data.frame() %>%
+kable
+```
+<br>
+
+**Similitud entre documentos usando coseno.**
+
+```{r}
+#| message: false
+#| warning: false
+simil_doc_cos <- textstat_simil(dtm_informes %>% dfm_weight(scheme = "prop"), method = "cosine", margin = "documents")
+simil_doc_cos%>%
+as.matrix() %>%
+as.data.frame() %>%
+kable
+```
+
+::: justify
+Los valores de similitud por correlación entre los documentos varían entre 0.48 y 0.80 aproximadamente y por similitud del coseno entre 0.52 y 0.82. Existe una correlación significativa entre los textos de algunos años consecutivos, probablemente debido a la continuidad de temas clave en el contexto económico de cada período.
+
+Documentos como los de 2019 y 2020 y 2021 y 2022 reflejan un alto grado de similitud, consistente con temas recurrentes como el COVID-19 y sus repercusiones, seguidos de la recuperación, y luego la crisis energética y las políticas de contención de la inflación.
+
+El texto de 2013 (text1) muestra valores de similitud relativamente bajos frente a otros años, lo cual tiene sentido, ya que este año es marcadamente diferente por tratarse de una etapa de salida de una larga recesión. La agenda y las preocupaciones del Banco de España giran en torno a la recuperación inicial y creación de empleo, en contraste con los temas más recientes relacionados con la pandemia y post-pandemia.
+:::
+
+
+::: justify
+Ahora vamos a analizar la similitud entre términos en los informes anuales, enfocándonos en las palabras más frecuentes.
+
+Para ello, identificamos las 50 palabras más frecuentes en los informes y creamos una matriz de términos solo con ellas. Finalmente, calculamos la similitud entre estos términos usando el coseno ajustado por la longitud del documento.
+
+```{r}
+#| message: false
+#| warning: false
+#| 
+# Filtrar palabras más frecuentes
+top_terms <- tidy_informesBdE %>%
+  count(word, sort = TRUE) %>%
+  top_n(50, n) %>%
+  pull(word)
+
+# Crear DTM solo con los términos más frecuentes
+dtm_top_terms <- dfm_select(dtm_informes, pattern = top_terms)
+
+# Similitud entre términos usando coseno y ajustado por longitud de documentos
+simil_term_cos <- textstat_simil(dtm_top_terms %>% dfm_weight(scheme = "prop"), method = "cosine", margin = "features")
+simil_term_cos%>%
+as.matrix() %>%
+as.data.frame() %>%
+kable
+```
+
+Términos como "economía", "española", "crecimiento" y "recuperación" muestran altas similitudes entre sí (valores entre 0.85 y 0.97). Esto indica que estos conceptos suelen aparecer en contextos similares, reflejando una narrativa cohesiva sobre la recuperación económica de España. Los términos "empleo" y "actividad" también están estrechamente relacionados, lo cual es consistente, ya que ambos son aspectos críticos en la evaluación del crecimiento económico y la recuperación tras crisis.
+
+"Política", "monetaria" y "fiscal" presentan altos valores de similitud con "economía" y "euro" (con coeficientes entre 0.87 y 0.97), indicando que la política monetaria y fiscal están fuertemente integradas en las discusiones sobre la economía española. "Política monetaria" y "euro" también tienen un alto grado de similitud (0.97), lo cual es coherente con la importancia del Euro en las políticas monetarias de España dentro de la zona euro.
+
+Los términos "financiera" y "financiación" también muestran alta similitud con términos como "política" y "actividad" (alrededor de 0.8-0.9), reflejando una probable discusión sobre la importancia de las políticas financieras para apoyar la economía real y mantener estabilidad en el proceso de recuperación.
+:::
+
+
+::: justify
+Vamos a calcular la similitud entre un nuevo documento ("La inflación se dispara") y el conjunto de documentos existentes.
+
+```{r}
+#| message: false
+#| warning: false
+# Nuevo documento
+nuevo_doc <- "La inflación se dispara"
+
+# Procesar y tokenizar el nuevo documento
+nuevo_dtm <- nuevo_doc %>%
+  tokens() %>%
+  tokens_remove(stopwords("es")) %>%
+  dfm(tolower = TRUE) %>%
+  dfm_weight(scheme = "prop")
+
+# Similaridad del nuevo documento con el resto
+simil_nuevo_doc <- textstat_simil(dtm_informes %>% dfm_weight(scheme='prop'), y = nuevo_dtm, method = "cosine", margin = "documents")
+simil_nuevo_doc%>%
+kable
+```
+
+Los documentos text6 (0.17206), text9 (0.11734), y text10 (0.11119) tienen las puntuaciones de similitud más altas, lo que indica que los informes de los años 2018, 2021 y 2022 tratan temas más relacionados con la inflación.
+:::
+
+::: justify
+Hacemos lo mismo para un nuevo documento ("Crecimiento sobresaliente de la economía").
+
+```{r}
+#| message: false
+#| warning: false
+# Nuevo documento
+nuevo_doc <- "Crecimiento sobresaliente de la economía"
+
+# Procesar y tokenizar el nuevo documento
+nuevo_dtm <- nuevo_doc %>%
+  tokens() %>%
+  tokens_remove(stopwords("es")) %>%
+  dfm(tolower = TRUE) %>%
+  dfm_weight(scheme = "prop")
+
+# Similaridad del nuevo documento con el resto
+simil_nuevo_doc <- textstat_simil(dtm_informes %>% dfm_weight(scheme='prop'), y = nuevo_dtm, method = "cosine", margin = "documents")
+simil_nuevo_doc%>%
+kable
+```
+
+Los documentos text4 (0.325), text5 (0.287), y text7 (0.275) se destacan como los más similares al nuevo documento. Esto indica que estos documentos contienen términos o temas relacionados con el crecimiento económico. Los valores para text8, text9 y text10 son los más bajos, por lo que estos documentos tienen menor relación con el tema de crecimiento económico.
+:::
+
+
+### Correlación para ciertos términos
+
+::: justify
+En este análisis, se calculará la correlación entre ciertos términos clave dentro de los documentos para identificar cómo se relacionan entre sí. Utilizando la matriz de términos-documentos (DTM) previamente construida, aplicaremos el método de correlación para determinar la relación entre palabras como "desigualdad", "invasión", "precios", "pandemia" y "desaceleración".
+
+Los resultados se organizarán para mostrar las correlaciones más fuertes de cada término con los demás, lo que permitirá identificar patrones temáticos o conceptos interrelacionados en los documentos analizados. Al filtrar por cada término, se obtendrán las correlaciones más relevantes, lo que puede ofrecer una visión sobre cómo estos conceptos pueden influir o estar asociados en el contexto general de los informes.
+
+```{r}
+#| message: false
+#| warning: false
+
+dtm_informes_prop <- dfm_weight(dtm_informes, scheme = "prop")
+
+# Calculamos la correlación entre términos clave
+corr_informes <- dtm_informes_prop %>% 
+  textstat_simil(dtm_informes_prop[, c("desigualdad", "invasión", "precios", "pandemia", "desaceleración")],
+                 method = "correlation", margin = "features") %>%
+  as.data.frame()
+
+# Vemos las correlaciones
+corr_informes %>% filter(feature2 == "desigualdad") %>% arrange(-correlation) %>% head(20)%>% kable() %>%kable_styling(full_width =FALSE) 
+corr_informes %>% filter(feature2=="invasión") %>%  arrange(-correlation) %>% head(20)%>% kable() %>%kable_styling(full_width =FALSE)
+corr_informes %>% filter(feature2 == "precios") %>% arrange(-correlation) %>% head(20)%>% kable() %>%kable_styling(full_width =FALSE)
+corr_informes %>% filter(feature2=="pandemia") %>%  arrange(-correlation) %>% head(20)%>% kable() %>%kable_styling(full_width =FALSE)
+corr_informes %>% filter(feature2=="desaceleración") %>%  arrange(-correlation) %>% head(20)%>% kable() %>%kable_styling(full_width =FALSE)
+```
+
+La fuerte correlación entre "desigualdad" y "áreas" (0.8318) indica que las desigualdades pueden manifestarse de manera distinta en diferentes regiones o sectores. Por su parte, la correlación con "geográficas" (0.7904) sugiere que la desigualdad tiene un componente espacial, enfatizando que las disparidades pueden variar significativamente según la ubicación. Finalmente, la relación con "trabajadores" (0.7458) resalta cómo la desigualdad económica está vinculada a la condición laboral.
+
+Para "invasión", llama la atención la relación con "cuellos" y "botella" (ambos con 0.9996), lo que sugiere que el término "invasión" podría estar vinculado a problemas logísticos o económicos, posiblemente refiriéndose a cuellos de botella en el suministro o en la producción provocados por conflictos. La correlación con "morosidad" (0.9977) indica que la invasión podría tener un impacto directo en la economía, aumentando la morosidad en pagos, lo que resalta la interconexión entre la inestabilidad política y sus consecuencias económicas. 
+
+En los resultados de correlación para "precios" destaca la correlación con "energéticos" (0.6664), indicando que los precios de los combustibles y la energía tienen un impacto significativo en el contenido de los informes. También resalta la conexión con "alza" (0.6449), lo que sugiere un enfoque en los informes en el aumento general en los precios. La relación con "monetaria" (0.6371) indica que las políticas monetarias pueden influir en la inflación y, por ende, en los precios. Asimismo, la correlación con "encarecimiento" (0.6356) refuerza la idea de que el aumento de costos ha afectado la economía. Finalmente, el vínculo con "materias" (0.6030) implica que los precios de las materias primas han estado en juego.
+
+En los resultados de correlación para "pandemia", destaca la relación extremadamente alta con "pymes" (0.9824), lo que sugiere que las pequeñas y medianas empresas son un tema central en la discusión sobre los efectos de la pandemia. También se observa una fuerte correlación con "ocio" (0.9768) y "hostelería" (0.9768), lo que indica que estos sectores han sido significativamente impactados por la pandemia, reflejando cómo las restricciones y cambios en el comportamiento de los consumidores han afectado estas áreas. La correlación con "ayudas" (0.9458) señala la importancia de las medidas de apoyo gubernamental y financiero durante la crisis. Además, "paquete" (0.9252) sugiere que los planes de recuperación y los programas de asistencia son elementos clave en la discusión.
+
+En los resultados de correlación para "desaceleración" se destacan varias palabras clave que revelan aspectos importantes de la discusión económica. La correlación con "interés" (0.8964) sugiere una conexión entre las tasas de interés y la desaceleración, indicando que cambios en las políticas monetarias influyen en el ritmo de crecimiento económico. Además, las correlaciones con "tipos" (0.8849) y "monetaria" (0.7201) también resaltan la importancia de las tasas de interés y las políticas del banco central en este contexto. La mención de "china" (0.7518) indica que las dinámicas económicas en China son relevantes para entender la desaceleración, posiblemente aludiendo a su influencia en el comercio global.
+:::
+
+
+
+### Keyness
+
+::: justify
+El análisis de Keyness se centra en identificar las palabras que son más distintivas en un documento específico en comparación con un conjunto de documentos de referencia. Utilizando un enfoque estadístico, específicamente la prueba de chi-cuadrado (chi2), este método nos permite resaltar términos que aparecen con mayor frecuencia en un documento objetivo (en este caso, cada informe) en relación con el resto de los informes. Al hacerlo, buscamos comprender qué palabras son especialmente relevantes o significativas en el contexto del documento analizado.
+
+Vamos a calcular la keyness del primer documento en comparación con los otros, lo que nos permitirá obtener una lista de los 10 términos más distintivos de ese documento.
+
+```{r}
+#| message: false
+#| warning: false
+# Calcular keyness comparando el documento 1 con el resto
+ts_keyness <- textstat_keyness(dtm_informes, target = 1) # 1 indica el primer documento
+
+
+# Ver los términos clave
+ts_keyness %>% arrange(desc(chi2)) %>% head(n=10)%>% kable() %>%kable_styling(full_width =FALSE) # Muestra los 10 términos más distintivos
+```
+
+
+El análisis de keyness para el primer documento revela términos distintivos que destacan su enfoque, especialmente en temas financieros y de recuperación económica. Palabras como "impulsos" (chi2 = 52.54) y "cerró" (chi2 = 48.76) sugieren un énfasis en acciones o conclusiones significativas, mientras que "recapitalización" (chi2 = 36.15) indica un posible análisis de la salud económica. Además, términos como "suavizar" (chi2 = 31.52), "desendeudamiento" y "saneamiento" (chi2 = 23.89) reflejan un interés en estrategias para mitigar problemas financieros. Finalmente, "logros", "pese" y "trayectoria" (chi2 = 22.91) sugieren una evaluación de progresos y resultados, lo que implica que el documento se centra en la evaluación de políticas y estrategias económicas.
+:::
+
+::: justify
+Repetimos este procedimiento para cada uno de los otros documentos, lo que nos proporcionará una visión completa de los términos clave que caracterizan cada informe en el conjunto.
+
+```{r}
+#| message: false
+#| warning: false
+# Comparar el segundo documento
+ts_keyness_doc2 <- textstat_keyness(dtm_informes, target = 2)
+ts_keyness_doc2 %>% arrange(desc(chi2)) %>% head(n=10)%>% kable() %>%kable_styling(full_width =FALSE)
+
+# Comparar el tercer documento
+ts_keyness_doc3 <- textstat_keyness(dtm_informes, target = 3)
+ts_keyness_doc3 %>% arrange(desc(chi2)) %>% head(n=10)%>% kable() %>%kable_styling(full_width =FALSE)
+
+# Comparar el cuarto documento
+ts_keyness_doc4 <- textstat_keyness(dtm_informes, target = 4)
+ts_keyness_doc4 %>% arrange(desc(chi2)) %>% head(n=10)%>% kable() %>%kable_styling(full_width =FALSE)
+
+# Comparar el quinto documento
+ts_keyness_doc5 <- textstat_keyness(dtm_informes, target = 5)
+ts_keyness_doc5 %>% arrange(desc(chi2)) %>% head(n=10)%>% kable() %>%kable_styling(full_width =FALSE)
+
+# Comparar el sexto documento
+ts_keyness_doc6 <- textstat_keyness(dtm_informes, target = 6)
+ts_keyness_doc6 %>% arrange(desc(chi2)) %>% head(n=10)%>% kable() %>%kable_styling(full_width =FALSE)
+
+# Comparar el séptimo documento
+ts_keyness_doc7 <- textstat_keyness(dtm_informes, target = 7)
+ts_keyness_doc7 %>% arrange(desc(chi2)) %>% head(n=10)%>% kable() %>%kable_styling(full_width =FALSE)
+
+# Comparar el octavo documento
+ts_keyness_doc8 <- textstat_keyness(dtm_informes, target = 8)
+ts_keyness_doc8 %>% arrange(desc(chi2)) %>% head(n=10)%>% kable() %>%kable_styling(full_width =FALSE)
+
+# Comparar el noveno documento
+ts_keyness_doc9 <- textstat_keyness(dtm_informes, target = 9)
+ts_keyness_doc9 %>% arrange(desc(chi2)) %>% head(n=10)%>% kable() %>%kable_styling(full_width =FALSE)
+
+# Comparar el décimo documento
+ts_keyness_doc10 <- textstat_keyness(dtm_informes, target = 10)
+ts_keyness_doc10 %>% arrange(desc(chi2)) %>% head(n=10)%>% kable() %>%kable_styling(full_width =FALSE)
+```
+
+El análisis de keyness para los documentos 2 a 10 muestra una variedad de términos distintivos que reflejan los temas y enfoques particulares de cada documento.
+
+Los términos más destacados en el documento 2, como "afianzamiento", "gama" y "superar" (todos con chi2 de aproximadamente 51.22), sugieren un enfoque en estrategias de fortalecimiento y superación de desafíos, posiblemente en un contexto de desarrollo o innovación. Además, palabras como "geográfica" y "reequilibrio" indican una preocupación por la distribución y la equidad. También aparece el término "viviendas", quizás planteando un énfasis de la situación de la vivienda dentro de este documento.
+
+En el tercer documento, el término "mejorar" (chi2 = 24.61) sugiere un énfasis en la mejora continua de procesos o situaciones. La presencia de "descensos", "corrección" y "mantuvieron" también puede implicar una discusión sobre fluctuaciones en el rendimiento o en ciertos indicadores.
+
+El cuarto documento presenta "sociedades" (chi2 = 45.67) y "sesgo" (chi2 = 41.99) como términos centrales, lo que sugiere un análisis de estructuras sociales o de mercado. "Subida" y "discuten" apuntan a debates sobre tendencias y cambios en diferentes contextos. El término "exterior" (chi2 = 25.16) también podría indicar una discusión sobre influencias externas en la economía.
+
+Para el quinto documento, "dificultando" (chi2 = 26.34) sugiere la identificación de obstáculos. El enfoque en "innovadora" resalta la búsqueda de nuevas soluciones o enfoques creativos.
+
+El sexto documento destaca términos como "inflación" y "tipos de interés", que indican una preocupación por la estabilidad de precios en el contexto económico.
+
+En el séptimo documento, "crisis" (chi2 = 93.24) y "covid-19" (chi2 = 69.02) indican un enfoque crítico sobre situaciones de emergencia, resaltando el impacto de la pandemia. Términos como "enfermedad" y "adoptado" también sugieren un análisis sobre respuestas a crisis.
+
+Los términos del octavo documento, como "ciudades" (chi2 = 71.91) y "municipios" (chi2 = 59.07), muestran un enfoque en la urbanización y sus desafíos. Además, los términos "despoblación" y "rurales" dejan claro que en este informe hay un enfoque en el análisis del éxodo rural en España. También vuelven a aparecer los términos "crisis" y "covid-19".
+
+El noveno documento presenta "ucrania" (chi2 = 54.89) y "transición" (chi2 = 41.15), sugiriendo una discusión sobre el conflicto de la invasión rusa y sus repercusiones. Los términos "climático", "ecológica" y "guerra" apuntan a preocupaciones contemporáneas sobre seguridad y medio ambiente. El término "inflacionista" indica una preocupación por fenómenos relacionados con la inflación.
+
+Finalmente, en el décimo documento destaca el término "energética". Esto parece estar relacionado con los problemas energéticos surgidos tras el inicio del conflicto entre Rusia y Ucrania.
+:::
+
+
+
+### Contexto con KWIC
+
+::: justify
+El análisis de contexto es fundamental para comprender el uso y la semántica de los términos en un corpus de textos. En este sentido, la técnica de KWIC (KeyWord in Context) es una herramienta poderosa que permite examinar cómo se utilizan ciertas palabras dentro de su contexto en un conjunto de documentos.
+
+La función kwic() permite identificar el entorno inmediato de un término específico, mostrando varias instancias donde aparece la palabra en cuestión junto con un número determinado de palabras antes y después de ella.
+
+Vamos a aplicar el análisis para ciertos términos de interés, empezando por "caída".
+
+```{r}
+#| message: false
+#| warning: false
+corpus_informes %>% tokens(remove_punct=TRUE,
+                         remove_numbers =TRUE,
+                         remove_symbols = TRUE, 
+                         remove_url = TRUE) %>% 
+  tokens_tolower() %>% 
+  kwic(pattern="caída")%>% kable() %>%kable_styling(full_width =FALSE)
+
+```
+
+Primero, vemos como el término "caída" aparece sobretodo en los informes de los últimos años. Destacan preocupaciones sobre la disminución de indicadores clave como el PIB, la actividad económica y el empleo. Las instancias del término indican un enfoque en el impacto de eventos externos, como la pandemia.
+
+
+Vamos a investigar qué tratamiento se hace del problema de la vivienda y los precios de los alquileres en los informes.
+
+```{r}
+#| message: false
+#| warning: false
+corpus_informes %>% tokens(remove_punct=TRUE,
+                         remove_numbers =TRUE,
+                         remove_symbols = TRUE,
+                         remove_url = TRUE) %>% 
+  tokens_tolower() %>% 
+  kwic(pattern=c("vivienda","alquil*"),window=7)%>% kable() %>%kable_styling(full_width =FALSE)
+
+```
+
+El análisis KWIC del tratamiento del problema de la vivienda y los precios de los alquileres en los informes revela un enfoque exhaustivo sobre la oferta y el acceso a la vivienda en España. Se observan múltiples menciones sobre la necesidad de aumentar la oferta de vivienda, tanto para la propiedad como para el alquiler, lo que indica una preocupación por la disponibilidad y accesibilidad de estos recursos habitacionales. El uso recurrente de términos como "medidas destinadas a aumentar la oferta" y "dificultades de acceso a la vivienda" refleja un reconocimiento de las desigualdades y tensiones en el mercado de la vivienda, especialmente para colectivos vulnerables como los jóvenes.
+
+
+Vamos a crear una nube de palabras a partir del contexto de la frase "oferta de" en los informes analizados. Este enfoque nos permitirá visualizar de manera gráfica las palabras que aparecen con mayor frecuencia en relación a este término, lo que puede ayudar a identificar los temas y conceptos más relevantes asociados al fenómeno de la oferta en la economía y ver si efectivamente la oferta de vivienda es uno de los asuntos más importantes.
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 7
+# Creación de un objeto corpus a partir del contexto de una frase
+
+corpus_oferta_de <- corpus_informes %>% tokens(remove_punct=TRUE,
+                                        remove_numbers =TRUE,
+                                        remove_symbols = TRUE, 
+                                        remove_url = TRUE) %>% 
+  tokens_tolower() %>% 
+  kwic(phrase("oferta de"), window = 10) %>% 
+  corpus()
+
+dtm_oferta_de <- corpus_oferta_de %>% 
+  tokens() %>% 
+  tokens_remove(stopwords("es")) %>%
+  dfm()
+
+
+# Wordcloud
+set.seed(46)
+textplot_wordcloud(dtm_oferta_de,min_count = 1)
+
+```
+
+Los términos más relevantes en torno a "oferta de" revelan un enfoque integral sobre los desafíos relacionados con la vivienda, destacando aspectos clave como vivienda, alquiler, y crédito, que reflejan la preocupación por la accesibilidad y financiamiento en el mercado habitacional. Términos como medidas, incentivos, promover e incremento reflejan un impulso proactivo hacia políticas que busquen aumentar la disponibilidad y asequibilidad de viviendas, indicando la necesidad de estrategias adaptativas que respondan a la complejidad del problema habitacional.
+:::
+
+
+
+### Co-ocurrencia de términos
+
+::: justify
+La co-ocurrencia de términos es una técnica fundamental en el análisis de textos que nos permite entender mejor las relaciones entre palabras dentro de un corpus. En esencia, se trata de crear una matriz que representa cuántas veces dos palabras específicas aparecen juntas en el mismo contexto, lo que nos ayuda a identificar patrones, asociaciones y significados subyacentes.
+
+Construimos una matriz de co-ocurrencia global y otra local.
+
+```{r}
+#| message: false
+#| warning: false
+# Recortar la DTM
+dtm_trim <- dfm_trim(dtm_informes, min_termfreq = 5, max_docfreq = 400)
+
+# Matriz de co-ocurrencia global
+cooc <- fcm(dtm_trim)
+
+# Matriz de co-ocurrencia local (usando contexto de ventana)
+# Tokenizar el corpus
+tokens_informes <- tokens(corpus_informes, remove_punct = TRUE, remove_numbers = TRUE) %>%
+  tokens_tolower() %>%
+  tokens_remove(stopwords("es"))
+
+# Usar una ventana de 7 palabras
+cooc_w <- fcm(tokens_informes, context = "window", window = 7)
+
+# Seleccionar las 100 características más frecuentes para la matriz de co-ocurrencia
+topfeatures <- names(sort(colSums(cooc_w), decreasing = TRUE))[1:100]
+
+# Filtrar la matriz de co-ocurrencia para mantener solo las 100 características más frecuentes
+cooc_w <- fcm_select(cooc_w, pattern = topfeatures)
+```
+
+Analizamos los grafos resultantes.
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 7
+# Co-ocurrencias en documento
+set.seed(46)
+
+# Filtrar la matriz de co-ocurrencia para mantener solo los 50 términos más frecuentes
+topfeatures <- names(sort(colSums(cooc), decreasing = TRUE))[1:50]
+cooc_trimmed <- fcm_select(cooc, pattern = topfeatures)
+
+
+set.seed(46)
+textplot_network(cooc_trimmed,  min_freq = .94,
+                 edge_alpha = 0.1, 
+                 edge_size = 5,
+                 edge_color = "#FF7F50",
+                 vertex_labelsize = log(rowSums(cooc_trimmed)))
+
+
+
+
+set.seed(46)
+textplot_network(cooc_w, min_freq = 0.975, 
+                 edge_alpha = 0.1, 
+                 edge_size = 5,
+                 edge_color = "purple")
+
+
+```
+
+Los grafos de co-ocurrencia generados a partir de las matrices global y local proporcionan una representación visual rica de las relaciones entre los términos más relevantes en los informes analizados.
+
+En el grafo de la matriz global, se destacan términos como impacto, pandemia, empresas, plazo, políticas, medidas, efectos, mayor e inflación, que están conectados mediante líneas rojas. Esta agrupación indica que la discusión se centra en las consecuencias económicas y sociales derivadas de la pandemia. Los términos impacto y efectos reflejan las repercusiones de eventos recientes en las empresas y en la economía en general. Además, la presencia de políticas y medidas hace ver que se está analizando cómo se han respondido a estos impactos, mientras que plazo y mayor podrían estar relacionados con la urgencia y la magnitud de estas intervenciones, especialmente en el contexto de la creciente inflación.
+
+El grafo de la matriz local revela relaciones aún más específicas y variadas. Por ejemplo, la conexión entre pensiones e inflacionistas indica un análisis sobre cómo las políticas de pensiones se ven afectadas por la inflación. La presencia de términos como pandemia, evolución, mitigar, impacto, medidas y efectos vuelve a indicar que se están considerando no solo las respuestas inmediatas a los desafíos presentados por la pandemia, sino también cómo estas medidas han evolucionado con el tiempo. También vemos la importancia de la pandemia con la relación entre crisis y covid-19, junto con términos como sanitaria, global y actual.
+
+Además, se observa que los desafíos a largo plazo son parte fundamental de la discusión, especialmente en términos de envejecimiento y población, así como tipos y interés. Esto refleja preocupaciones sobre cómo los cambios demográficos y las políticas monetarias afectarán el panorama económico en el futuro. También es significativo el vínculo entre transición, ecológica y climático, que sugiere que el cambio climático y la sostenibilidad están siendo considerados como parte integral de las políticas públicas.
+
+Finalmente, la relación entre inflación y objetivo destaca la necesidad de establecer metas claras en la política económica, enfatizando la importancia de mitigar los efectos adversos de la inflación sobre la población y la economía en general.
+:::
+
+# Conclusión
+
+::: justify
+El análisis de los informes anuales del Banco de España entre 2013 y 2022 muestra cómo la institución ha reflejado los cambios en el entorno económico y los desafíos específicos de cada periodo. A lo largo de estos años, los informes han destacado temas como la recuperación económica el impacto de la pandemia de COVID-19 y, más recientemente, la crisis energética y el aumento de la inflación debido al conflicto en Ucrania. La evolución de términos clave como "crecimiento", "empleo", "inflación" y "política monetaria" revela una narrativa enfocada en la estabilidad y sostenibilidad económica a largo plazo. En resumen, los informes del Banco de España evidencian su papel en el análisis y la descripción de los contextos económicos cambiantes, proporcionando una visión informada de los desafíos y tendencias económicas de la última década.
+:::
